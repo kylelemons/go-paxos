@@ -1,0 +1,58 @@
+package rpc;
+
+enum Paxos {
+  MULTI = 0;
+  FAST  = 1;
+}
+
+message Empty {}
+
+message Proposal {
+  enum Type {
+    FILE   = 0;
+    MASTER = 1;
+  }
+
+  // Indicates proposal type
+  optional Type   type = 1;
+
+  // Used in Propose:
+  optional uint64 sequence_id = 2;
+  optional uint64 master_id   = 3;
+  optional uint64 request_id  = 4;
+
+  // Used for FILE:
+  optional string file_name  = 6;
+  optional string file_rev   = 7;
+  optional Paxos  file_paxos = 8;
+
+  // Used in Accept:
+  optional string value_sha1 = 13;
+  optional bytes  data       = 14;
+}
+
+message Promise {
+  optional bool ack = 1;
+
+  optional uint64 ignore_seq_before = 2;
+  optional uint64 past_sequence_id  = 3;
+
+  optional uint64 ignore_rev_before = 6;
+  optional uint64 past_rev          = 7;
+
+  optional string past_value_sha1 = 10;
+  optional bytes  past_data       = 11;
+}
+
+message Ack {
+  optional bool ack = 1;
+}
+
+service Acceptor {
+  rpc Propose(Proposal) returns (Promise);
+  rpc Accept(Proposal) returns (Ack);
+}
+
+service Learner {
+  rpc Learn(Proposal) returns (Ack);
+}
