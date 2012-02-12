@@ -10,49 +10,87 @@ import (
 
 var _ rpc.Acceptor = &Acceptor{}
 
-type acceptedValue struct {
+type savedFile struct {
 	sequenceId uint64
 	value      []byte
+}
+
+const breakpoint = 1<<63
+func breaksPromise(proposed, promise uint64) bool {
+	return promise - proposed < breakpoint
+}
+
+func checkProposal(prop *rpc.Proposal) error {
+	if prop.Origin == nil {
+		return fmt.Errorf("proposal: missing origin")
+	}
+	if prop.ProposalId == nil {
+		return fmt.Errorf("proposal: missing proposal_id")
+	} else if *prop.ProposalId <= 0 {
+		return fmt.Errorf("proposal: proposal_id must be greater than zero")
+	}
+	if prop.RequestId == nil {
+		return fmt.Errorf("proposal: missing request_id")
+	}
+	if prop.LeaderId == nil {
+		return fmt.Errorf("proposal: missing leader_id")
+	}
+	return nil
+}
+
+func checkFile(file *rpc.File) error {
+	if file.Name == nil {
+		return fmt.Errorf("file: missing name")
+	}
+	if file.Revision == nil {
+		return fmt.Errorf("file: missing revision")
+	}
+	return nil
 }
 
 type Acceptor struct {
 	lock sync.Mutex
 
-	accepted map[string]*acceptedValue
-
-	ignoreSeqBefore uint64
-	acceptRequestId uint64
+	promised uint64
 }
 
 func (a *Acceptor) Propose(prop *rpc.Proposal, prom *rpc.Promise) error {
-	if prop.SequenceId == nil {
-		return fmt.Errorf("missing sequence_id")
+	if err := checkProposal(prop); err != nil {
+		return err
 	}
-	if prop.RequestId == nil {
-		return fmt.Errorf("missing request_id")
-	}
-	if prop.FileName == nil {
-		return fmt.Errorf("missing file_name")
+	for idx, file := range prop.File {
+		if err := checkFile(file); err != nil {
+			return fmt.Errorf("proposal.file[%d]: %s", idx, err)
+		}
 	}
 
 	a.lock.Lock()
 	defer a.lock.Unlock()
 
-	if *prop.SequenceId <= a.ignoreSeqBefore {
+	switch {
+	case prop.Type == nil:
+	case *prop.Type == rpc.Proposal_FILE:
+	case *prop.Type == rpc.Proposal_ELECTION:
+	}
+
+	// Send the last promise we made if we have one
+	if a.promised > 0 {
+		prom.LastPromised = proto.Uint64(a.promised)
+	}
+
+	if breaksPromise(*prop.ProposalId, a.promised) {
+		// Nack if the proposal would break our promise
 		prom.Ack = proto.Bool(false)
-		prom.IgnoreSeqBefore = proto.Uint64(a.ignoreSeqBefore)
-		return nil
+	} else {
+		// Make the promise if we can
+		a.promised = *prop.ProposalId
+		prom.IPromise = prop.ProposalId
 	}
 
-	if val, ok := a.accepted[*prop.FileName]; ok {
-		prom.PastSequenceId = proto.Uint64(val.sequenceId)
-		prom.PastData = append([]byte{}, val.value...)
+	// If nothing failed, we can ack
+	if prom.Ack == nil {
+		prom.Ack = proto.Bool(true)
 	}
-
-	a.ignoreSeqBefore = *prop.SequenceId
-	a.acceptRequestId = a.ignoreSeqBefore
-	prom.IgnoreSeqBefore = prop.SequenceId
-	prom.Ack = proto.Bool(true)
 	return nil
 }
 

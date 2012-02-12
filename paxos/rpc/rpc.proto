@@ -1,51 +1,46 @@
 package rpc;
 
-enum Paxos {
-  MULTI = 0;
-  FAST  = 1;
-}
-
 message Empty {}
+
+message File {
+  required string name      = 1;
+  optional uint64 revision  = 2;
+  optional bytes  data      = 3;
+  optional uint64 last_rev  = 4;
+  optional bytes  last_data = 5;
+}
 
 message Proposal {
   enum Type {
-    FILE   = 0;
-    MASTER = 1;
+    FILE     = 0;
+    ELECTION = 1;
   }
 
-  // Indicates proposal type
-  optional Type   type = 1;
+  required uint64 origin = 1;
+  optional Type   type   = 2;
 
   // Used in Propose:
-  optional uint64 sequence_id = 2;
-  optional uint64 master_id   = 3;
+  optional uint64 proposal_id = 3;
   optional uint64 request_id  = 4;
+  optional uint64 leader_id   = 5;
 
   // Used for FILE:
-  optional string file_name  = 6;
-  optional string file_rev   = 7;
-  optional Paxos  file_paxos = 8;
+  repeated File   file = 6;
 
-  // Used in Accept:
-  optional string value_sha1 = 13;
-  optional bytes  data       = 14;
+  // Used for ELECTION:
+  optional uint64 new_leader_id = 7;
 }
 
 message Promise {
-  optional bool ack = 1;
+  required bool ack = 1;
 
-  optional uint64 ignore_seq_before = 2;
-  optional uint64 past_sequence_id  = 3;
-
-  optional uint64 ignore_rev_before = 6;
-  optional uint64 past_rev          = 7;
-
-  optional string past_value_sha1 = 10;
-  optional bytes  past_data       = 11;
+  optional uint64 i_promise      = 2;
+  optional uint64 last_promised  = 3;
+  repeated File   file           = 4;
 }
 
 message Ack {
-  optional bool ack = 1;
+  required bool ack = 1;
 }
 
 service Acceptor {
@@ -54,5 +49,6 @@ service Acceptor {
 }
 
 service Learner {
+  rpc Lookup(File) returns (File);
   rpc Learn(Proposal) returns (Ack);
 }

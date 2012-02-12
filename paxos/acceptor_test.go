@@ -15,34 +15,48 @@ func TestProposeMissingFields(t *testing.T) {
 	}{
 		{
 			Proposal: &rpc.Proposal{},
-			Error:    "missing sequence_id",
+			Error:    "proposal: missing origin",
 		},
 		{
 			Proposal: &rpc.Proposal{
-				SequenceId: proto.Uint64(0),
+				Origin: proto.Uint64(0),
 			},
-			Error:    "missing request_id",
+			Error:    "proposal: missing proposal_id",
 		},
 		{
 			Proposal: &rpc.Proposal{
-				SequenceId: proto.Uint64(0),
-				RequestId: proto.Uint64(12),
+				Origin: proto.Uint64(0),
+				ProposalId: proto.Uint64(0),
 			},
-			Error:    "missing file_name",
+			Error:    "proposal: proposal_id must be greater than zero",
 		},
 		{
 			Proposal: &rpc.Proposal{
-				SequenceId: proto.Uint64(0),
-				RequestId: proto.Uint64(12),
-				FileName: proto.String(""),
+				Origin: proto.Uint64(0),
+				ProposalId: proto.Uint64(1),
+			},
+			Error:    "proposal: missing request_id",
+		},
+		{
+			Proposal: &rpc.Proposal{
+				Origin: proto.Uint64(0),
+				ProposalId: proto.Uint64(1),
+				RequestId: proto.Uint64(0),
+			},
+			Error:    "proposal: missing leader_id",
+		},
+		{
+			Proposal: &rpc.Proposal{
+				Origin: proto.Uint64(0),
+				ProposalId: proto.Uint64(1),
+				RequestId: proto.Uint64(0),
+				LeaderId: proto.Uint64(0),
 			},
 			Error:    "<nil>",
 		},
 	}
 
-	a := &Acceptor{
-		accepted: map[string]*acceptedValue{},
-	}
+	a := &Acceptor{}
 
 	for _, test := range tests {
 		err := a.Propose(test.Proposal, &rpc.Promise{})
@@ -52,80 +66,82 @@ func TestProposeMissingFields(t *testing.T) {
 	}
 }
 
-func TestPropose(t *testing.T) {
+func TestProposeWraparound(t *testing.T) {
 	tests := []struct{
-		Proposal *rpc.Proposal
-		Promise  *rpc.Promise
+		Desc    string
+		Propose uint64
+		Ack     bool
 	}{
 		{
-			Proposal: &rpc.Proposal{
-				SequenceId: proto.Uint64(1),
-				RequestId: proto.Uint64(12),
-				FileName: proto.String("/p/test"),
-			},
-			Promise: &rpc.Promise{
-				Ack: proto.Bool(true),
-				IgnoreSeqBefore: proto.Uint64(1),
-			},
+			Desc: "/p/test",
+			Propose: 1,
+			Ack: true,
 		},
 		{
-			Proposal: &rpc.Proposal{
-				SequenceId: proto.Uint64(42),
-				RequestId: proto.Uint64(13),
-				FileName: proto.String("/p/test/more"),
-			},
-			Promise: &rpc.Promise{
-				Ack: proto.Bool(true),
-				IgnoreSeqBefore: proto.Uint64(42),
-			},
+			Desc: "/p/test/more",
+			Propose: 42,
+			Ack: true,
 		},
 		{
-			Proposal: &rpc.Proposal{
-				SequenceId: proto.Uint64(42),
-				RequestId: proto.Uint64(14),
-				FileName: proto.String("/p/test/dup"),
-			},
-			Promise: &rpc.Promise{
-				Ack: proto.Bool(false),
-				IgnoreSeqBefore: proto.Uint64(42),
-			},
+			Desc: "/p/test/dup",
+			Propose: 42,
+			Ack: false,
 		},
 		{
-			Proposal: &rpc.Proposal{
-				SequenceId: proto.Uint64(12),
-				RequestId: proto.Uint64(14),
-				FileName: proto.String("/p/oops"),
-			},
-			Promise: &rpc.Promise{
-				Ack: proto.Bool(false),
-				IgnoreSeqBefore: proto.Uint64(42),
-			},
+			Desc: "/p/oops",
+			Propose: 12,
+			Ack: false,
 		},
 		{
-			Proposal: &rpc.Proposal{
-				SequenceId: proto.Uint64(43),
-				RequestId: proto.Uint64(15),
-				FileName: proto.String("/p/test/next"),
-			},
-			Promise: &rpc.Promise{
-				Ack: proto.Bool(true),
-				IgnoreSeqBefore: proto.Uint64(43),
-			},
+			Desc: "/p/above/break",
+			Propose: 42 + breakpoint + 5,
+			Ack: false,
+		},
+		{
+			Desc: "/p/below/break",
+			Propose: 42 + breakpoint - 5,
+			Ack: true,
+		},
+		{
+			Desc: "/p/after/wrap",
+			Propose: 32,
+			Ack: true,
 		},
 	}
 
-	a := &Acceptor{
-		accepted: map[string]*acceptedValue{},
-	}
+	a := &Acceptor{}
+	var last, promised uint64
 
 	for idx, test := range tests {
+		prop := &rpc.Proposal{
+			LeaderId: proto.Uint64(0),
+			Origin: proto.Uint64(uint64(idx)),
+			Type:   rpc.NewProposal_Type(rpc.Proposal_FILE),
+			RequestId: proto.Uint64(uint64(idx)),
+			ProposalId: &test.Propose,
+		}
 		prom := &rpc.Promise{}
-		if err := a.Propose(test.Proposal, prom); err != nil {
-			t.Errorf("%d. Promise(%q) returned %q", idx, test.Proposal, err)
+		if err := a.Propose(prop, prom); err != nil {
+			t.Errorf("%d. Propose(%d) returned %q", idx, test.Propose, err)
 			continue
 		}
-		if got, want := prom.String(), test.Promise.String(); got != want {
-			t.Errorf("%d. Promise(%s) = %s, want %s", idx, test.Proposal, got, want)
+
+		if test.Ack {
+			promised = test.Propose
 		}
+
+		want := &rpc.Promise{}
+		want.Ack = &test.Ack
+		if last > 0 {
+			want.LastPromised = &last
+		}
+		if test.Ack {
+			want.IPromise = &promised
+		}
+
+		if got, want := prom.String(), want.String(); got != want {
+			t.Errorf("%d. Propose(%s) = %s, want %s", idx, test.Propose, got, want)
+		}
+		last = promised
 	}
 }
