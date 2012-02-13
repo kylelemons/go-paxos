@@ -51,7 +51,9 @@ func checkFile(file *rpc.File) error {
 type Acceptor struct {
 	lock sync.Mutex
 
+	leader   uint64
 	promised uint64
+	filePromises map[string]uint64
 }
 
 func (a *Acceptor) Propose(prop *rpc.Proposal, prom *rpc.Promise) error {
@@ -69,8 +71,34 @@ func (a *Acceptor) Propose(prop *rpc.Proposal, prom *rpc.Promise) error {
 
 	switch {
 	case prop.Type == nil:
+		// Well, don't try to dereference it!
 	case *prop.Type == rpc.Proposal_FILE:
+		for _, file := range prop.File {
+			name := *file.Name
+			promised, ok := a.filePromises[name]
+			if ok {
+				// Store the last promise if we made one
+				file.LastPromised = proto.Uint64(promised)
+			}
+			if ok && breaksPromise(*file.Revision, promised) {
+				// It breaks the promise so the proposal fails
+				prom.Ack = proto.Bool(false)
+			} else {
+				// Make the promise
+				a.filePromises[name] = *file.Revision
+				file.IPromise = file.Revision
+			}
+			prom.File = append(prom.File, file)
+		}
 	case *prop.Type == rpc.Proposal_ELECTION:
+		switch {
+		case prop.NewLeaderId == nil:
+			fallthrough
+		case *prop.NewLeaderId <= a.leader:
+			prom.Ack = proto.Bool(false)
+			return nil
+		}
+		prom.NewLeaderId = prop.NewLeaderId
 	}
 
 	// Send the last promise we made if we have one

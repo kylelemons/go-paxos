@@ -52,8 +52,8 @@ type File struct {
 	Name             *string `protobuf:"bytes,1,req,name=name" json:"name,omitempty"`
 	Revision         *uint64 `protobuf:"varint,2,opt,name=revision" json:"revision,omitempty"`
 	Data             []byte  `protobuf:"bytes,3,opt,name=data" json:"data,omitempty"`
-	LastRev          *uint64 `protobuf:"varint,4,opt,name=last_rev" json:"last_rev,omitempty"`
-	LastData         []byte  `protobuf:"bytes,5,opt,name=last_data" json:"last_data,omitempty"`
+	IPromise         *uint64 `protobuf:"varint,4,opt,name=i_promise" json:"i_promise,omitempty"`
+	LastPromised     *uint64 `protobuf:"varint,5,opt,name=last_promised" json:"last_promised,omitempty"`
 	XXX_unrecognized []byte  `json:",omitempty"`
 }
 
@@ -79,6 +79,7 @@ type Promise struct {
 	IPromise         *uint64 `protobuf:"varint,2,opt,name=i_promise" json:"i_promise,omitempty"`
 	LastPromised     *uint64 `protobuf:"varint,3,opt,name=last_promised" json:"last_promised,omitempty"`
 	File             []*File `protobuf:"bytes,4,rep,name=file" json:"file,omitempty"`
+	NewLeaderId      *uint64 `protobuf:"varint,5,opt,name=new_leader_id" json:"new_leader_id,omitempty"`
 	XXX_unrecognized []byte  `json:",omitempty"`
 }
 

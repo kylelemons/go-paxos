@@ -3,11 +3,13 @@ package rpc;
 message Empty {}
 
 message File {
-  required string name      = 1;
-  optional uint64 revision  = 2;
-  optional bytes  data      = 3;
-  optional uint64 last_rev  = 4;
-  optional bytes  last_data = 5;
+  required string name          = 1;
+  optional uint64 revision      = 2;
+  optional bytes  data          = 3;
+
+  // Used in promise.file
+  optional uint64 i_promise     = 4;
+  optional uint64 last_promised = 5;
 }
 
 message Proposal {
@@ -36,7 +38,12 @@ message Promise {
 
   optional uint64 i_promise      = 2;
   optional uint64 last_promised  = 3;
-  repeated File   file           = 4;
+
+  // Used for FILE:
+  repeated File   file = 4;
+
+  // Used for ELECTION:
+  optional uint64 new_leader_id = 5;
 }
 
 message Ack {
